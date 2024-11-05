@@ -5,6 +5,7 @@ edition = "2021"
 authors = ["Wayne Lau"]
 readme = "README.md"
 description = "A Rust library for processing forum data."
+repository = "https://github.com/wheynelau/forum-rs.git"
 
 [[bin]]
 name = "clean-reddit"
@@ -26,3 +27,8 @@ itertools = "0.13.0"
 pretty_assertions = "1.4.1"
 rand = "0.8.5"
 tempfile = "3.13.0"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
