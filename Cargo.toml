@@ -1,0 +1,28 @@
+[package]
+name = "forum-rs"
+version = "0.4.1"
+edition = "2021"
+authors = ["Wayne Lau"]
+readme = "README.md"
+description = "A Rust library for processing forum data."
+
+[[bin]]
+name = "clean-reddit"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5.20", features = ["derive"] }
+crossbeam-channel = "0.5.13"
+lazy_static = "1.5.0"
+petgraph = "0.6.5"
+rayon = "1.10.0"
+regex = "1.11.1"
+serde = { version = "1.0.214", features = ["derive"] }
+serde_json = "1.0.132"
+tokenizers = { version = "0.20.2", features = ["hf-hub", "http"] }
+
+[dev-dependencies]
+itertools = "0.13.0"
+pretty_assertions = "1.4.1"
+rand = "0.8.5"
+tempfile = "3.13.0"
