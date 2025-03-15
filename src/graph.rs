@@ -135,7 +135,7 @@ impl ThreadGraph {
             .map(|start| {
                 // skip if not root
                 let mut dfs = Dfs::new(&self.graph, *start);
-                let mut threads: Vec<usize> = Vec::new();
+                let mut threads: Vec<usize> = Vec::with_capacity(50); // Pre-allocate with a reasonable size
 
                 while let Some(visited) = dfs.next(&self.graph) {
                     threads.push(visited.index());
@@ -149,6 +149,12 @@ impl ThreadGraph {
                         self.allthreads[*thread].pagetext.clone()
                     })
                     .collect();
+                // Shrink to fit to reduce memory usage
+                let vec_string = {
+                    let mut vs = vec_string;
+                    vs.shrink_to_fit();
+                    vs
+                };
                 // dbg!(vec_string.len());
                 // println!();
                 (root_id, vec_string)

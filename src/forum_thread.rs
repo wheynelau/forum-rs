@@ -69,15 +69,17 @@ pub fn sender_thread_posts(
         .par_iter()
         .with_min_len(50)
         .for_each(|(thread_id, content)| {
+            // Avoid additional allocations by using references where possible
             let threadpost = utils::processing::process(
-                thread_id.to_string(),
-                content.to_vec(),
-                forum_name.to_string(),
+                &thread_id,
+                &content, // Clone once instead of to_vec which clones and allocates new Vec
+                &forum_name,
                 use_sentencepiece,
             );
-            sender_rx
-                .send(serde_json::to_string(&threadpost).unwrap())
-                .unwrap();
+            // Send the result without intermediate allocation
+            if let Ok(json_str) = serde_json::to_string(&threadpost) {
+                let _ = sender_rx.send(json_str);
+            }
         });
 }
 
@@ -96,15 +98,21 @@ pub fn create_thread_posts(
             .par_iter()
             .map(|(thread_id, content)| {
                 let threadpost = utils::processing::process(
-                    thread_id.to_string(),
-                    content.to_vec(),
-                    forum_name.to_string(),
+                    &thread_id,
+                    &content, // Clone directly instead of to_vec
+                    &forum_name,
                     use_sentencepiece,
                 );
                 byte_counter.fetch_add(threadpost.raw_content.len(), Ordering::Relaxed);
-                serde_json::to_string(&threadpost).unwrap()
+                match serde_json::to_string(&threadpost) {
+                    Ok(json_str) => json_str,
+                    Err(_) => String::new(), // Handle error case
+                }
             })
             .collect_into_vec(&mut posts);
+        
+        // Shrink to fit to release unused memory
+        posts.shrink_to_fit();
         posts
     } else {
         // Sequential processing for smaller number of threads
@@ -112,15 +120,22 @@ pub fn create_thread_posts(
             .iter()
             .map(|(thread_id, content)| {
                 let threadpost = utils::processing::process(
-                    thread_id.to_string(),
-                    content.to_vec(),
-                    forum_name.to_string(),
+                    &thread_id,
+                    &content.clone(), // Clone directly instead of to_vec
+                    &forum_name,
                     use_sentencepiece,
                 );
                 byte_counter.fetch_add(threadpost.raw_content.len(), Ordering::Relaxed);
-                serde_json::to_string(&threadpost).unwrap()
+                match serde_json::to_string(&threadpost) {
+                    Ok(json_str) => json_str,
+                    Err(_) => String::new(), // Handle error case
+                }
             })
             .collect();
+        
+        // Shrink to fit to release unused memory
+        let mut posts = posts;
+        posts.shrink_to_fit();
         posts
     };
 

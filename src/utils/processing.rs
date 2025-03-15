@@ -51,22 +51,35 @@ fn clean_text(text: &str) -> String {
 ///
 /// ```
 pub fn process(
-    thread_id: String,
-    content: Vec<String>,
-    forum_name: String,
+    thread_id: &str,
+    content: &[String],
+    forum_name: &str,
     use_sentencepiece: bool,
 ) -> utils::writer::ThreadPost {
-    let content: Vec<String> = content.into_iter().map(|text| clean_text(&text)).collect();
-    let content = content.join("\n");
+    // Process in chunks to avoid large intermediate allocations
+    let mut cleaned_content = String::with_capacity(
+        content.iter().map(|s| s.len()).sum::<usize>() + content.len() // Add space for newlines
+    );
+    
+    // Process each string directly without creating intermediate Vec
+    for (i, text) in content.iter().enumerate() {
+        if i > 0 {
+            cleaned_content.push('\n');
+        }
+        cleaned_content.push_str(&clean_text(text));
+    }
+    
+    // Calculate length based on the cleaned content
     let length: usize = match use_sentencepiece {
-        true => globals::tokenize(&content).len(),
-        false => content.split_whitespace().count(),
+        true => globals::tokenize(&cleaned_content).len(),
+        false => cleaned_content.split_whitespace().count(),
     };
+    
     utils::writer::ThreadPost {
         length,
-        raw_content: content,
-        thread_id,
-        source: forum_name,
+        raw_content: cleaned_content,
+        thread_id: String::from(thread_id),
+        source: String::from(forum_name),
     }
 }
 
@@ -146,9 +159,9 @@ mod tests {
 
         // Test with sentencepiece=false (word count)
         let result = process(
-            thread_id.clone(),
-            content.clone(),
-            forum_name.clone(),
+            &thread_id,
+            &content,
+            &forum_name,
             false,
         );
 
