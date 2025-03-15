@@ -184,7 +184,7 @@ fn main() -> std::io::Result<()> {
 
     // Reorder the largest size first
     // This should speed up the parallel processing
-    let all_folders = utils::file::reorder_by_size(all_folders);
+    // let all_folders = utils::file::reorder_by_size(all_folders);
     let total_folders = all_folders.len();
     println!("First folder: {:?}", all_folders[0]);
 
