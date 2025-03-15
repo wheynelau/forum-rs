@@ -1,5 +1,5 @@
 use crate::forum_thread::Post;
-use petgraph::graph::{DiGraph, NodeIndex};
+use petgraph::graph::NodeIndex;
 use petgraph::visit::Dfs;
 use petgraph::Graph;
 use rayon::prelude::*;
@@ -10,7 +10,7 @@ use std::collections::HashMap;
 ///
 #[derive(Default)]
 pub struct ThreadGraph {
-    graph: Graph<String, ()>,
+    graph: Graph<String, (), petgraph::Directed>,
     node_map: HashMap<String, NodeIndex>,
     threads: Vec<NodeIndex>,
     allthreads: Vec<Post>,
@@ -29,7 +29,7 @@ impl ThreadGraph {
     /// ```
     pub fn new() -> Self {
         ThreadGraph {
-            graph: DiGraph::new(),
+            graph: Graph::new(),
             node_map: HashMap::with_capacity(10000),
             threads: Vec::with_capacity(10000),
             allthreads: Vec::with_capacity(10000),
@@ -43,7 +43,7 @@ impl ThreadGraph {
     ///
     /// # Arguments
     ///
-    /// * `post` - `Post` - The post to add
+    /// * `id` - `&String` - The id of the post
     ///
     /// # Returns
     ///
@@ -52,21 +52,18 @@ impl ThreadGraph {
     /// # Example
     ///
     /// ```rust
-    /// let post = Post::new("1", true, "1", "1", "1");
-    /// let idx = threadgraph.add_node(post);
+    /// let post = Post::default();
+    /// let idx = threadgraph.add_node(&post.id);
     ///
     /// assert_eq!(idx.index(), 0);
     /// ```
-    pub fn add_node(&mut self, post: Post) -> NodeIndex {
-        let id = &post.id;
+    fn add_node(&mut self, id: &String) -> NodeIndex {
         if let Some(&idx) = self.node_map.get(id) {
             idx
         } else {
             let idx = self.graph.add_node(id.clone());
-            let post_id = post.id.clone(); // Clone once for the HashMap key
-            self.allthreads.push(post);
-            // self.id_set.insert(id.clone());
-            self.node_map.insert(post_id, idx);
+            self.allthreads.push(Post::default());
+            self.node_map.insert(id.to_string(), idx);
             idx
         }
     }
@@ -76,25 +73,15 @@ impl ThreadGraph {
     /// If it doesn't exist, it will create a placeholder post and add it to the graph.
     ///
     /// The reason for the above implementation is due to some of the threads being detached from the main thread.
-    pub fn add_edge(&mut self, from_id: &String, to_id: &String) {
-        // check if from_id is in map
-        if !self.node_map.contains_key(from_id) {
-            // This happens when the thread is detached, where the parent does not exist
-            let post = Post::placeholder(from_id.to_string());
-            let idx = self.add_node(post);
-            self.add_threads(idx)
+    pub fn add_post(&mut self, post: Post) {
+        // Every id should be unique, use this to update the node_map
+        let from_idx = self.add_node(&post.parent_post_id);
+        let to_id = self.add_node(&post.id);
+        self.allthreads[to_id.index()] = post;
+        if from_idx == to_id {
+            return;
         }
-        let from_idx = self
-            .node_map
-            .get(from_id)
-            .expect("from_id should exist at this point");
-        let to_idx = self
-            .node_map
-            .get(to_id)
-            .expect("to_id should exist at this point");
-
-        // Add the edge
-        self.graph.add_edge(*from_idx, *to_idx, ());
+        self.graph.add_edge(from_idx, to_id, ());
     }
 
     // #[allow(dead_code)]
@@ -114,7 +101,6 @@ impl ThreadGraph {
                 .graph
                 .neighbors_directed(node, petgraph::Direction::Incoming)
                 .count();
-
             if incoming_count == 0 {
                 roots_idx.push(node);
             }
@@ -135,10 +121,15 @@ impl ThreadGraph {
     /// threads[0].1 // vector of pagetext
     /// ```
     pub fn traverse(&self) -> Vec<(String, Vec<String>)> {
-        // Remove unused call to show_roots()
-        
+        let roots = self.show_roots();
+        // check for duplicates
+        // self.show_roots();
+        // let mut root_id: String = String::new();
+        // print number of nodes
+        //dbg!(self.graph.node_count());
+
         let mut final_threads: Vec<(String, Vec<String>)> = Vec::with_capacity(self.threads.len());
-        self.threads
+        roots
             .par_iter()
             .with_min_len(100)
             .map(|start| {
@@ -181,6 +172,7 @@ impl ThreadGraph {
         self.node_map.contains_key(id)
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,26 +231,12 @@ mod tests {
         for _ in 0..10 {
             let (mut graph, mut posts) = setup();
             posts.shuffle(&mut thread_rng());
-            let mut comments = Vec::new();
             for post in posts.iter() {
-                let idx = graph.add_node(post.clone());
-                match post.is_thread {
-                    true => graph.add_threads(idx),
-                    false => comments.push(post.clone()),
-                }
+                graph.add_post(post.clone());
             }
-            assert_eq!(graph.graph.node_count(), 11);
-            assert_eq!(graph.threads.len(), 2);
-            assert_eq!(comments.len(), 9);
 
-            // add edges
-            for comment in comments.iter() {
-                graph.add_edge(&comment.parent_post_id, &comment.id);
-            }
-            // should be 12 due to detached thread
             assert_eq!(graph.graph.node_count(), 12);
             assert_eq!(graph.graph.edge_count(), 9);
-            assert_eq!(graph.threads.len(), 3);
 
             let mut threads = graph.traverse();
             threads.sort_by(|a, b| a.0.cmp(&b.0));

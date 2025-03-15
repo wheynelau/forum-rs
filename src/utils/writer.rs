@@ -116,16 +116,16 @@ pub async fn write_jsonl_receiver(
 ) -> std::io::Result<()> {
     use tokio::fs::File;
     use tokio::io::{AsyncWriteExt, BufWriter};
-    
+
     // Create a all.jsonl file
     let output_path = output_folder.join("all.jsonl");
     let file = File::create(output_path).await?;
     let mut writer = BufWriter::with_capacity(1_048_576, file);
-    
+
     while let Ok(data) = receiver.recv() {
         writer.write_all(format!("{}\n", data).as_bytes()).await?;
     }
-    
+
     writer.flush().await?;
     println!("Finished writing to all.jsonl");
     Ok(())
@@ -155,12 +155,10 @@ mod tests {
         let output_folder = temp_dir.path().to_path_buf();
         let output_folder_clone = output_folder.clone();
         let (tx, rx) = bounded(1000);
-        
+
         // Create a tokio runtime for the test
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let handle = rt.spawn(async move {
-            write_jsonl_receiver(rx, output_folder_clone).await
-        });
+        let handle = rt.spawn(async move { write_jsonl_receiver(rx, output_folder_clone).await });
 
         tx.send(String::from("Hello")).unwrap();
         tx.send(String::from("World")).unwrap();

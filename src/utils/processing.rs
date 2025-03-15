@@ -56,10 +56,7 @@ pub fn process(
     forum_name: String,
     use_sentencepiece: bool,
 ) -> utils::writer::ThreadPost {
-    let content: Vec<String> = content
-        .into_iter()
-        .map(|text| clean_text(&text))
-        .collect();
+    let content: Vec<String> = content.into_iter().map(|text| clean_text(&text)).collect();
     let content = content.join("\n");
     let length: usize = match use_sentencepiece {
         true => globals::tokenize(&content).len(),
@@ -134,24 +131,32 @@ mod tests {
             );
         }
     }
-    
+
     #[test]
     fn test_process() {
         // Test the process function
         globals::init_regex();
-        
+
         let thread_id = "test123".to_string();
-        let content = vec!["hello--world".to_string(), "@user http://example.com".to_string()];
+        let content = vec![
+            "hello--world".to_string(),
+            "@user http://example.com".to_string(),
+        ];
         let forum_name = "testforum".to_string();
-        
+
         // Test with sentencepiece=false (word count)
-        let result = process(thread_id.clone(), content.clone(), forum_name.clone(), false);
-        
+        let result = process(
+            thread_id.clone(),
+            content.clone(),
+            forum_name.clone(),
+            false,
+        );
+
         assert_eq!(result.thread_id, thread_id);
         assert_eq!(result.source, forum_name);
         assert_eq!(result.raw_content, "hello world\n");
         assert_eq!(result.length, 2); // "hello world" has 2 words
-        
+
         // We don't test the sentencepiece=true case as it depends on globals::tokenize
         // which might require external resources
     }

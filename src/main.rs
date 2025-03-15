@@ -2,13 +2,13 @@
 
 use clap::Parser;
 use crossbeam_channel::{unbounded, Sender};
+use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use std::fs::{self};
-use std::io::Write;
 use std::{
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
         Arc,
     },
 };
@@ -159,7 +159,7 @@ fn main() -> std::io::Result<()> {
     if let Some(tokenizer) = tokenizer {
         globals::init_tokenizer(&tokenizer);
     }
-    
+
     // For safety, the output folder is not created if not found
     // Also if not empty, it will panic.
     if !args.safe {
@@ -167,10 +167,10 @@ fn main() -> std::io::Result<()> {
         println!("Folder has been created at `{}`", &out_folder)
     } else {
         let entries = fs::read_dir(&out_folder)
-            .unwrap()
+            .expect("Unable to read dir")
             .map(|res| res.map(|e| e.path()))
             .collect::<Result<Vec<_>, std::io::Error>>()
-            .unwrap();
+            .expect("Error collecting entries");
         if !entries.is_empty() {
             panic!("Output folder is not empty, you can run with `--safe false` to overwrite the files.");
         }
@@ -178,74 +178,72 @@ fn main() -> std::io::Result<()> {
 
     // let folder = "reddit-graph/test_main_folder/";
     // let out_folder : &str = "./output/";
-    let all_folders: Vec<PathBuf> = utils::file::all_folders(&folder).unwrap();
+    let all_folders: Vec<PathBuf> =
+        utils::file::all_folders(&folder).expect("Unable to get all folders");
 
     // Reorder the largest size first
     // This should speed up the parallel processing
     let all_folders = utils::file::reorder_by_size(all_folders);
     let total_folders = all_folders.len();
 
-    // Before the par_iter loop:
+    // Before loop
     let counter = Arc::new(AtomicUsize::new(0));
-    let running = Arc::new(AtomicBool::new(true));
-    let running_clone = running.clone();
-    let counter_clone = counter.clone();
-    let start_time_clone = Instant::now();
-
     let (data_tx, data_rx) = unbounded();
     let data_rx_clone = data_rx.clone();
-    
-    // Spawn progress display thread
-    let progress_thread = std::thread::spawn(move || {
-        while running_clone.load(Ordering::SeqCst) {
-            let count = counter_clone.load(Ordering::SeqCst);
-            print!(
-                "\rProcessed {}/{} folders. Queue to write: {}. Current duration: {:2}m {:.2}s",
-                count,
-                total_folders,
-                data_rx_clone.len(),
-                start_time_clone.elapsed().as_secs() / 60,
-                start_time_clone.elapsed().as_secs() % 60
-            );
-            std::io::stdout().flush().unwrap();
-            std::thread::sleep(Duration::from_millis(500));
-        }
-        // One final update after completion
-        let count = counter_clone.load(Ordering::SeqCst);
-        println!(
-            "\rProcessed {}/{} folders. Queue to write: {}.  Current duration: {:2}m {:.2}s",
-            count,
-            total_folders,
-            data_rx_clone.len(),
-            start_time_clone.elapsed().as_secs() / 60,
-            start_time_clone.elapsed().as_secs() % 60
-        );
-    });
-    
+
+    // Create a progress bar
+    let pb = ProgressBar::new(total_folders as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} folders ({eta}) {msg}")
+            .unwrap()
+            .progress_chars("#>-")
+    );
+
+    // Clone progress bar and wrap in Arc for thread-safe updates
+    let pb_clone = Arc::new(pb);
+    let pb_thread = pb_clone.clone();
+
     // Create and use a tokio runtime for async tasks
-    let rt = Runtime::new().unwrap();
+    let rt = Runtime::new().expect("Unable to create tokio runtime");
     let out_folder_path = PathBuf::from(out_folder);
-    
+
     // Spawn the async task for writing JSONL data
     rt.spawn(async move {
         if let Err(e) = utils::writer::write_jsonl_receiver(data_rx, out_folder_path).await {
             eprintln!("Error writing JSONL: {}", e);
         }
     });
-    
-    // Use rayon's parallel iterator for folder processing (keeping this part parallel)
-    all_folders.par_iter().for_each(|folder| {
-        process_folder(folder, &use_sentencepiece, &source, data_tx.clone());
-        counter.fetch_add(1, Ordering::SeqCst);
+
+    // Create a clone of counter for the update thread
+    let counter_clone = counter.clone();
+
+    // Spawn a thread to periodically update the progress bar with queue size
+    let update_thread = std::thread::spawn(move || {
+        while !data_rx_clone.is_empty() || counter_clone.load(Ordering::SeqCst) < total_folders {
+            pb_thread.set_message(format!("Queue: {}", data_rx_clone.len()));
+            std::thread::sleep(Duration::from_millis(500));
+        }
     });
-    
+
+    // Use rayon's parallel iterator for folder processing
+    all_folders.into_par_iter().for_each(|folder| {
+        process_folder(&folder, &use_sentencepiece, &source, data_tx.clone());
+        let count = counter.fetch_add(1, Ordering::SeqCst) + 1;
+        pb_clone.set_position(count as u64);
+    });
+
     drop(data_tx);
     // Wait for the receiver to finish
     println!("Completed processing all folders");
 
-    // After the loop completes, stop the progress thread
-    running.store(false, Ordering::SeqCst);
-    progress_thread.join().unwrap();
+    // Finish the progress bar
+    pb_clone.finish_with_message("Processing complete");
+
+    // Wait for the update thread to finish
+    if let Err(e) = update_thread.join() {
+        eprintln!("Error joining update thread: {:?}", e);
+    }
 
     println!();
     let num_threads: u64 = rayon::current_num_threads() as u64;
@@ -264,12 +262,11 @@ fn main() -> std::io::Result<()> {
 
     // Wait for a moment to ensure all async tasks complete
     std::thread::sleep(Duration::from_millis(100));
-    
+
     Ok(())
 }
 #[cfg(test)]
 mod main_tests {
-    use std::collections::HashSet;
 
     use super::*;
     use pretty_assertions::assert_eq;
@@ -281,38 +278,5 @@ mod main_tests {
         let extension = initial_path.extension().unwrap().to_str().unwrap();
         let new_file = format!("{}/{}_new.{}", folder, stem, extension);
         assert_eq!(new_file, "forum_folder/output/something_new.jsonl");
-    }
-
-    // TODO: Add the test for this integration test
-    #[test]
-    #[ignore]
-    fn test_threads_integration() {
-        // this needs to have a folder with jsonl files
-        let folder = "test_data/";
-        // Skip test if file is not found
-        if !Path::new(folder).exists() {}
-        globals::init_regex();
-        let folder = String::from(folder);
-        let threads: Vec<(String, Vec<String>)> = experimental::parallel::get_threads(&folder);
-        let previous_implementation = experimental::parallel::_get_threads(&folder);
-        let sender_threads: Vec<(String, Vec<String>)> = experimental::sender::get_threads(&folder);
-
-        assert_eq!(threads.len(), 42);
-        assert_eq!(previous_implementation.len(), 42);
-        assert_eq!(sender_threads.len(), 42);
-
-        // check if roots are same
-        let mut sender_roots: HashSet<String> = HashSet::new();
-        let mut parallel_roots: HashSet<String> = HashSet::new();
-
-        for (root, _) in threads.iter() {
-            sender_roots.insert(root.clone());
-        }
-
-        for (root, _) in previous_implementation.iter() {
-            parallel_roots.insert(root.clone());
-        }
-
-        assert_eq!(sender_roots, parallel_roots);
     }
 }

@@ -3,8 +3,8 @@ use rayon::prelude::*;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
-use crate::experimental;
 use crate::forum_thread;
+use crate::graph;
 use crate::utils;
 
 #[allow(dead_code)]
@@ -59,8 +59,8 @@ drop(post_tx);
 
 ```
 */
-fn process_graph(rx: Receiver<forum_thread::Post>) -> experimental::graph::ThreadGraph {
-    let mut threadgraph = experimental::graph::ThreadGraph::new();
+fn process_graph(rx: Receiver<forum_thread::Post>) -> graph::ThreadGraph {
+    let mut threadgraph = graph::ThreadGraph::new();
     while let Ok(thread) = rx.recv() {
         threadgraph.add_post(thread);
     }
