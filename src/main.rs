@@ -16,6 +16,10 @@ use tokio::runtime::Runtime;
 
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
 /**
 
 # Struct for the command line arguments
@@ -147,6 +151,8 @@ fn process_folder(
 /// └── sub2.jsonl
 /// ```
 fn main() -> std::io::Result<()> {
+    #[cfg(feature = "dhat-heap")]
+    let _profiler = dhat::Profiler::new_heap();
     let args = args::Cli::parse();
     let folder: String = args.input;
     let out_folder: String = args.output;

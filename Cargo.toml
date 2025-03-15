@@ -14,6 +14,7 @@ path = "src/main.rs"
 [dependencies]
 clap = { version = "4.5.20", features = ["derive"] }
 crossbeam-channel = "0.5.13"
+dhat = "0.3.3"
 indicatif = "0.17.11"
 lazy_static = "1.5.0"
 petgraph = "0.7.1"
@@ -34,3 +35,10 @@ tempfile = "3.13.0"
 [profile.dist]
 inherits = "release"
 lto = "thin"
+
+[profile.release]
+debug = 1
+
+[features]
+dhat-heap = []    # if you are doing heap profiling
+dhat-ad-hoc = []  # if you are doing ad hoc profiling
