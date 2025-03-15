@@ -102,10 +102,7 @@ pub fn create_thread_posts(
                     use_sentencepiece,
                 );
                 byte_counter.fetch_add(threadpost.raw_content.len(), Ordering::Relaxed);
-                match serde_json::to_string(&threadpost) {
-                    Ok(json_str) => json_str,
-                    Err(_) => String::new(), // Handle error case
-                }
+                serde_json::to_string(&threadpost).unwrap_or_default()
             })
             .collect_into_vec(&mut posts);
 
@@ -124,10 +121,7 @@ pub fn create_thread_posts(
                     use_sentencepiece,
                 );
                 byte_counter.fetch_add(threadpost.raw_content.len(), Ordering::Relaxed);
-                match serde_json::to_string(&threadpost) {
-                    Ok(json_str) => json_str,
-                    Err(_) => String::new(), // Handle error case
-                }
+                serde_json::to_string(&threadpost).unwrap_or_default()
             })
             .collect();
 

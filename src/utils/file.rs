@@ -96,6 +96,7 @@ fn folder_size(folder: &PathBuf) -> Result<u64, io::Error> {
 /// ```
 /// let sorted_folder = reorder_by_size(folder);
 /// ```
+#[allow(dead_code)]
 pub fn reorder_by_size(mut folder: Vec<PathBuf>) -> Vec<PathBuf> {
     folder.sort_by_cached_key(|path| {
         // Use a default size of 0 if there's an error calculating the folder size
