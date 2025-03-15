@@ -12,6 +12,7 @@ use std::{
         Arc,
     },
 };
+use tokio::runtime::Runtime;
 
 use std::time::{Duration, Instant};
 
@@ -154,11 +155,11 @@ fn main() -> std::io::Result<()> {
     let use_sentencepiece: bool = tokenizer.as_ref().is_some();
 
     // Initialize regex
-
     globals::init_regex();
     if let Some(tokenizer) = tokenizer {
         globals::init_tokenizer(&tokenizer);
     }
+    
     // For safety, the output folder is not created if not found
     // Also if not empty, it will panic.
     if !args.safe {
@@ -193,6 +194,7 @@ fn main() -> std::io::Result<()> {
 
     let (data_tx, data_rx) = unbounded();
     let data_rx_clone = data_rx.clone();
+    
     // Spawn progress display thread
     let progress_thread = std::thread::spawn(move || {
         while running_clone.load(Ordering::SeqCst) {
@@ -219,15 +221,24 @@ fn main() -> std::io::Result<()> {
             start_time_clone.elapsed().as_secs() % 60
         );
     });
-    rayon::spawn(move || {
-        if let Err(e) = utils::writer::write_jsonl_receiver(data_rx, out_folder.into()) {
+    
+    // Create and use a tokio runtime for async tasks
+    let rt = Runtime::new().unwrap();
+    let out_folder_path = PathBuf::from(out_folder);
+    
+    // Spawn the async task for writing JSONL data
+    rt.spawn(async move {
+        if let Err(e) = utils::writer::write_jsonl_receiver(data_rx, out_folder_path).await {
             eprintln!("Error writing JSONL: {}", e);
         }
     });
+    
+    // Use rayon's parallel iterator for folder processing (keeping this part parallel)
     all_folders.par_iter().for_each(|folder| {
         process_folder(folder, &use_sentencepiece, &source, data_tx.clone());
         counter.fetch_add(1, Ordering::SeqCst);
     });
+    
     drop(data_tx);
     // Wait for the receiver to finish
     println!("Completed processing all folders");
@@ -251,6 +262,9 @@ fn main() -> std::io::Result<()> {
         TOTAL_TIME_WRITE_JSONL.load(Ordering::SeqCst) / num_threads
     );
 
+    // Wait for a moment to ensure all async tasks complete
+    std::thread::sleep(Duration::from_millis(100));
+    
     Ok(())
 }
 #[cfg(test)]

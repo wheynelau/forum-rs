@@ -99,27 +99,34 @@ fn write_jsonl(data: Vec<String>, _bytes: usize, file_path: PathBuf) -> std::io:
 ///
 /// ```
 /// let (tx, rx) = bounded(1000); // This can be unbounded
-/// let write_handle = std::thread::spawn(move || {
-///    write_jsonl_receiver(rx, output_folder)
+/// let rt = Runtime::new().unwrap();
+/// let handle = rt.spawn(async {
+///    write_jsonl_receiver(rx, output_folder).await
 /// });
 ///
 /// tx.send(String::from("Hello")).unwrap();
 /// tx.send(String::from("World")).unwrap();
 ///
 /// drop(tx);
-/// write_handle.join().unwrap().unwrap();
+/// rt.block_on(handle).unwrap().unwrap();
 /// ```
-pub fn write_jsonl_receiver(
+pub async fn write_jsonl_receiver(
     receiver: Receiver<String>,
     output_folder: PathBuf,
 ) -> std::io::Result<()> {
+    use tokio::fs::File;
+    use tokio::io::{AsyncWriteExt, BufWriter};
+    
     // Create a all.jsonl file
     let output_path = output_folder.join("all.jsonl");
-    let mut writer = BufWriter::with_capacity(1_048_576, File::create(output_path)?);
+    let file = File::create(output_path).await?;
+    let mut writer = BufWriter::with_capacity(1_048_576, file);
+    
     while let Ok(data) = receiver.recv() {
-        writeln!(&mut writer, "{}", data)?;
+        writer.write_all(format!("{}\n", data).as_bytes()).await?;
     }
-    writer.flush()?;
+    
+    writer.flush().await?;
     println!("Finished writing to all.jsonl");
     Ok(())
 }
@@ -148,14 +155,19 @@ mod tests {
         let output_folder = temp_dir.path().to_path_buf();
         let output_folder_clone = output_folder.clone();
         let (tx, rx) = bounded(1000);
-        let write_handle =
-            std::thread::spawn(move || write_jsonl_receiver(rx, output_folder_clone));
+        
+        // Create a tokio runtime for the test
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let handle = rt.spawn(async move {
+            write_jsonl_receiver(rx, output_folder_clone).await
+        });
 
         tx.send(String::from("Hello")).unwrap();
         tx.send(String::from("World")).unwrap();
         drop(tx);
 
-        write_handle.join().unwrap().unwrap();
+        // Wait for the async task to complete
+        rt.block_on(handle).unwrap().unwrap();
 
         let output_path = output_folder.join("all.jsonl");
         let contents = std::fs::read_to_string(output_path).unwrap();

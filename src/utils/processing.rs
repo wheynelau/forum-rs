@@ -20,8 +20,8 @@ use crate::utils;
 /// let cleaned_text = clean_text(&text);
 /// assert_eq!(cleaned_text, "hello world");
 /// ```
-fn clean_text(text: String) -> String {
-    let cleaned_text = globals::clean_content(&text);
+fn clean_text(text: &str) -> String {
+    let cleaned_text = globals::clean_content(text);
     cleaned_text.trim().to_string()
 }
 /// Process the thread content
@@ -58,8 +58,7 @@ pub fn process(
 ) -> utils::writer::ThreadPost {
     let content: Vec<String> = content
         .into_iter()
-        // .with_min_len(1000)
-        .map(clean_text)
+        .map(|text| clean_text(&text))
         .collect();
     let content = content.join("\n");
     let length: usize = match use_sentencepiece {
@@ -79,8 +78,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_regex() {
-        // Integration test for the regex
+    fn test_clean_text() {
+        // Integration test for the clean_text function
 
         // Add more test cases here
         let test_cases = vec![
@@ -126,7 +125,7 @@ mod tests {
         globals::init_regex();
 
         for (input, expected) in test_cases {
-            let result = utils::processing::clean_text(input.to_string());
+            let result = utils::processing::clean_text(input);
             println!("{} -> {}", input, result);
             assert_eq!(
                 result, expected,
@@ -134,5 +133,26 @@ mod tests {
                 input, expected, result
             );
         }
+    }
+    
+    #[test]
+    fn test_process() {
+        // Test the process function
+        globals::init_regex();
+        
+        let thread_id = "test123".to_string();
+        let content = vec!["hello--world".to_string(), "@user http://example.com".to_string()];
+        let forum_name = "testforum".to_string();
+        
+        // Test with sentencepiece=false (word count)
+        let result = process(thread_id.clone(), content.clone(), forum_name.clone(), false);
+        
+        assert_eq!(result.thread_id, thread_id);
+        assert_eq!(result.source, forum_name);
+        assert_eq!(result.raw_content, "hello world\n");
+        assert_eq!(result.length, 2); // "hello world" has 2 words
+        
+        // We don't test the sentencepiece=true case as it depends on globals::tokenize
+        // which might require external resources
     }
 }

@@ -58,14 +58,15 @@ impl ThreadGraph {
     /// assert_eq!(idx.index(), 0);
     /// ```
     pub fn add_node(&mut self, post: Post) -> NodeIndex {
-        let id = post.id.clone();
-        if let Some(&idx) = self.node_map.get(&id) {
+        let id = &post.id;
+        if let Some(&idx) = self.node_map.get(id) {
             idx
         } else {
             let idx = self.graph.add_node(id.clone());
+            let post_id = post.id.clone(); // Clone once for the HashMap key
             self.allthreads.push(post);
             // self.id_set.insert(id.clone());
-            self.node_map.insert(id.to_string(), idx);
+            self.node_map.insert(post_id, idx);
             idx
         }
     }
@@ -134,13 +135,8 @@ impl ThreadGraph {
     /// threads[0].1 // vector of pagetext
     /// ```
     pub fn traverse(&self) -> Vec<(String, Vec<String>)> {
-        self.show_roots();
-        // check for duplicates
-        // self.show_roots();
-        // let mut root_id: String = String::new();
-        // print number of nodes
-        //dbg!(self.graph.node_count());
-
+        // Remove unused call to show_roots()
+        
         let mut final_threads: Vec<(String, Vec<String>)> = Vec::with_capacity(self.threads.len());
         self.threads
             .par_iter()
