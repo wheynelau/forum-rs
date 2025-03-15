@@ -86,12 +86,7 @@ static TOTAL_TIME_WRITE_JSONL: AtomicU64 = AtomicU64::new(0);
 /// process_folder(folder, &use_sentencepiece, &source, data_tx.clone());
 ///
 /// ```
-fn process_folder(
-    folder: &Path,
-    use_sentencepiece: &bool,
-    source: &String,
-    post_tx: Sender<String>,
-) {
+fn process_folder(folder: &Path, use_sentencepiece: &bool, source: &str, post_tx: Sender<String>) {
     // dbg!(&folder);
     let folder = folder.to_str().unwrap();
 
@@ -101,7 +96,7 @@ fn process_folder(
     TOTAL_TIME_GET_THREADS.fetch_add(get_threads_time, Ordering::SeqCst);
 
     let start = Instant::now();
-    forum_thread::sender_thread_posts(threads, *use_sentencepiece, source.to_string(), post_tx);
+    forum_thread::sender_thread_posts(threads, use_sentencepiece, source.to_string(), post_tx);
     let create_posts_time = start.elapsed().as_secs();
     TOTAL_TIME_CREATE_POSTS.fetch_add(create_posts_time, Ordering::SeqCst);
 
@@ -191,6 +186,7 @@ fn main() -> std::io::Result<()> {
     // This should speed up the parallel processing
     let all_folders = utils::file::reorder_by_size(all_folders);
     let total_folders = all_folders.len();
+    println!("First folder: {:?}", all_folders[0]);
 
     // Before loop
     let counter = Arc::new(AtomicUsize::new(0));
@@ -201,9 +197,8 @@ fn main() -> std::io::Result<()> {
     let pb = ProgressBar::new(total_folders as u64);
     pb.set_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} folders ({eta}) {msg}")
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} folders {msg}")
             .unwrap()
-            .progress_chars("#>-")
     );
 
     // Clone progress bar and wrap in Arc for thread-safe updates

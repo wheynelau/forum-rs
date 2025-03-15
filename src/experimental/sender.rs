@@ -101,6 +101,6 @@ pub fn get_threads(path: &str) -> Vec<(String, Vec<String>)> {
     drop(post_tx);
 
     // Wait for the graph processing to complete
-    let threadgraph = graph_handle.join().unwrap();
+    let mut threadgraph = graph_handle.join().unwrap();
     threadgraph.traverse()
 }

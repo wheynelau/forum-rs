@@ -60,23 +60,21 @@ impl Post {
 
 pub fn sender_thread_posts(
     threads: Vec<(String, Vec<String>)>,
-    use_sentencepiece: bool,
+    use_sentencepiece: &bool,
     forum_name: String,
     sender_rx: crossbeam_channel::Sender<String>,
 ) {
-    // Parallel processing for large number of threads
     threads
-        .par_iter()
+        .into_par_iter()
         .with_min_len(50)
         .for_each(|(thread_id, content)| {
-            // Avoid additional allocations by using references where possible
             let threadpost = utils::processing::process(
                 &thread_id,
-                &content, // Clone once instead of to_vec which clones and allocates new Vec
+                &content,
                 &forum_name,
                 use_sentencepiece,
             );
-            // Send the result without intermediate allocation
+            // This sends after the processing
             if let Ok(json_str) = serde_json::to_string(&threadpost) {
                 let _ = sender_rx.send(json_str);
             }
@@ -87,7 +85,7 @@ pub fn sender_thread_posts(
 pub fn create_thread_posts(
     _forum_id: &str,
     threads: Vec<(String, Vec<String>)>,
-    use_sentencepiece: bool,
+    use_sentencepiece: &bool,
     forum_name: String,
 ) -> (Vec<String>, usize) {
     let byte_counter = AtomicUsize::new(0);
@@ -95,11 +93,11 @@ pub fn create_thread_posts(
         // Parallel processing for large number of threads
         let mut posts: Vec<String> = Vec::with_capacity(threads.len());
         threads
-            .par_iter()
+            .into_par_iter()
             .map(|(thread_id, content)| {
                 let threadpost = utils::processing::process(
                     &thread_id,
-                    &content, // Clone directly instead of to_vec
+                    &content,
                     &forum_name,
                     use_sentencepiece,
                 );
@@ -110,18 +108,18 @@ pub fn create_thread_posts(
                 }
             })
             .collect_into_vec(&mut posts);
-        
+
         // Shrink to fit to release unused memory
         posts.shrink_to_fit();
         posts
     } else {
         // Sequential processing for smaller number of threads
-        let posts: Vec<String> = threads
-            .iter()
+        let mut posts: Vec<String> = threads
+            .into_iter()
             .map(|(thread_id, content)| {
                 let threadpost = utils::processing::process(
                     &thread_id,
-                    &content.clone(), // Clone directly instead of to_vec
+                    &content,
                     &forum_name,
                     use_sentencepiece,
                 );
@@ -132,9 +130,8 @@ pub fn create_thread_posts(
                 }
             })
             .collect();
-        
+
         // Shrink to fit to release unused memory
-        let mut posts = posts;
         posts.shrink_to_fit();
         posts
     };

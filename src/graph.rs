@@ -120,7 +120,7 @@ impl ThreadGraph {
     /// threads[0].0 // root post id
     /// threads[0].1 // vector of pagetext
     /// ```
-    pub fn traverse(&self) -> Vec<(String, Vec<String>)> {
+    pub fn traverse(&mut self) -> Vec<(String, Vec<String>)> {
         let roots = self.show_roots();
         // check for duplicates
         // self.show_roots();
@@ -143,26 +143,22 @@ impl ThreadGraph {
                 let root_id = self.graph[*start].clone();
                 let vec_string: Vec<String> = threads
                     .iter()
-                    // .with_min_len(100)
                     .map(|thread| {
-                        // print!("{} ", thread);
                         self.allthreads[*thread].pagetext.clone()
                     })
                     .collect();
-                // Shrink to fit to reduce memory usage
                 let vec_string = {
                     let mut vs = vec_string;
                     vs.shrink_to_fit();
                     vs
                 };
-                // dbg!(vec_string.len());
-                // println!();
                 (root_id, vec_string)
             })
             .collect_into_vec(&mut final_threads);
-        // println!("Longest thread: {}", long_string);
-        // println!("Longest thread: {}", longest_thread);
-        // dbg!(roots);
+        // explicit clear
+        self.threads.clear();
+        self.allthreads.clear();
+        self.node_map.clear();
         final_threads
     }
 

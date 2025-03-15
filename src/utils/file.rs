@@ -71,7 +71,7 @@ fn folder_size(folder: &PathBuf) -> Result<u64, io::Error> {
         if metadata.is_file() {
             size += metadata.len();
         } else if metadata.is_dir() {
-            panic!("There should not be any subfolders in the main folder");
+            panic!("There should not be any subfolders in the main folder {:?}", path);
         }
     }
 

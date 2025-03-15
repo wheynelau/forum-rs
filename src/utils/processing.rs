@@ -54,13 +54,13 @@ pub fn process(
     thread_id: &str,
     content: &[String],
     forum_name: &str,
-    use_sentencepiece: bool,
+    use_sentencepiece: &bool,
 ) -> utils::writer::ThreadPost {
     // Process in chunks to avoid large intermediate allocations
     let mut cleaned_content = String::with_capacity(
-        content.iter().map(|s| s.len()).sum::<usize>() + content.len() // Add space for newlines
+        content.iter().map(|s| s.len()).sum::<usize>() + content.len(), // Add space for newlines
     );
-    
+
     // Process each string directly without creating intermediate Vec
     for (i, text) in content.iter().enumerate() {
         if i > 0 {
@@ -68,13 +68,13 @@ pub fn process(
         }
         cleaned_content.push_str(&clean_text(text));
     }
-    
+
     // Calculate length based on the cleaned content
     let length: usize = match use_sentencepiece {
         true => globals::tokenize(&cleaned_content).len(),
         false => cleaned_content.split_whitespace().count(),
     };
-    
+
     utils::writer::ThreadPost {
         length,
         raw_content: cleaned_content,
@@ -158,12 +158,7 @@ mod tests {
         let forum_name = "testforum".to_string();
 
         // Test with sentencepiece=false (word count)
-        let result = process(
-            &thread_id,
-            &content,
-            &forum_name,
-            false,
-        );
+        let result = process(&thread_id, &content, &forum_name, false);
 
         assert_eq!(result.thread_id, thread_id);
         assert_eq!(result.source, forum_name);
