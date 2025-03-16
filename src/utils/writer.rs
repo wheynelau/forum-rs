@@ -2,6 +2,12 @@ use crossbeam_channel::Receiver;
 use serde::Serialize;
 use std::path::PathBuf;
 
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+use tokio::fs::File;
+use tokio::io::{AsyncWriteExt, BufWriter};
+
 /// Struct for writing to a JSONL file
 #[derive(Serialize, Clone, Default)]
 pub struct ThreadPost {
@@ -40,17 +46,17 @@ pub struct ThreadPost {
 pub async fn write_jsonl_receiver(
     receiver: Receiver<String>,
     output_folder: PathBuf,
+    total_bytes: Arc<AtomicU64>,
 ) -> std::io::Result<()> {
-    use tokio::fs::File;
-    use tokio::io::{AsyncWriteExt, BufWriter};
-
     // Create a all.jsonl file
     let output_path = output_folder.join("all.jsonl");
     let file = File::create(output_path).await?;
     let mut writer = BufWriter::with_capacity(1_048_576, file);
 
     while let Ok(data) = receiver.recv() {
-        writer.write_all(format!("{}\n", data).as_bytes()).await?;
+        let data = format!("{}\n", data);
+        let bytes = writer.write(data.as_bytes()).await?;
+        total_bytes.fetch_add(bytes as u64, Ordering::SeqCst);
     }
 
     writer.flush().await?;
@@ -64,28 +70,20 @@ mod tests {
     use crossbeam_channel::bounded;
     use pretty_assertions::assert_eq;
     use tempfile::TempDir;
-    #[test]
-    fn test_get_chunk_size() {
-        let post = ThreadPost::default();
-        // repeat 1000 for data
-        let data: Vec<ThreadPost> = vec![post; 1000];
-        // Total size 300MB
-        let bytes = 300 * 1024_usize.pow(2);
-        let chunk_size = super::get_chunk_size(bytes, &data);
-        // 1000 / 3 ceil = 334
-        assert_eq!(chunk_size, 334);
-    }
-
+    use tokio::runtime::Runtime;
     #[test]
     fn test_receiver() {
         let temp_dir = TempDir::new().unwrap();
         let output_folder = temp_dir.path().to_path_buf();
         let output_folder_clone = output_folder.clone();
         let (tx, rx) = bounded(1000);
-
+        let rt = Runtime::new().expect("Unable to create tokio runtime");
         // Create a tokio runtime for the test
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let handle = rt.spawn(async move { write_jsonl_receiver(rx, output_folder_clone).await });
+        let total_bytes = Arc::new(AtomicU64::new(0));
+        let total_bytes_clone = total_bytes.clone();
+        let handle = rt.spawn(async move {
+            write_jsonl_receiver(rx, output_folder_clone, total_bytes_clone).await
+        });
 
         tx.send(String::from("Hello")).unwrap();
         tx.send(String::from("World")).unwrap();

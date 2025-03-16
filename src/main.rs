@@ -49,7 +49,7 @@ pub mod args;
 
 This module contains functions that may not produce the best performance but are experimental
 */
-pub mod experimental;
+pub mod sender;
 pub mod forum_thread;
 pub mod globals;
 pub mod graph;
@@ -91,7 +91,7 @@ fn process_folder(folder: &Path, use_sentencepiece: &bool, source: &str, post_tx
     let folder = folder.to_str().unwrap();
 
     let start = Instant::now();
-    let threads: Vec<(String, Vec<String>)> = experimental::sender::get_threads(folder);
+    let threads: Vec<(String, Vec<String>)> = sender::get_threads(folder);
     let get_threads_time = start.elapsed().as_secs();
     TOTAL_TIME_GET_THREADS.fetch_add(get_threads_time, Ordering::SeqCst);
 
@@ -99,14 +99,6 @@ fn process_folder(folder: &Path, use_sentencepiece: &bool, source: &str, post_tx
     forum_thread::sender_thread_posts(threads, use_sentencepiece, source.to_string(), post_tx);
     let create_posts_time = start.elapsed().as_secs();
     TOTAL_TIME_CREATE_POSTS.fetch_add(create_posts_time, Ordering::SeqCst);
-
-    // if !posts.is_empty() {
-    //     let start = Instant::now();
-    //     let output_file: PathBuf = Path::new(&out_folder).join(format!("{}.jsonl", forum_id));
-    //     utils::writer::write_jsonl(posts, bytes, output_file).unwrap();
-    //     let write_jsonl_time = start.elapsed().as_secs();
-    //     TOTAL_TIME_WRITE_JSONL.fetch_add(write_jsonl_time, Ordering::SeqCst);
-    // }
 }
 ///
 /// Entry point of the program
@@ -155,6 +147,7 @@ fn main() -> std::io::Result<()> {
     let source: String = args.source;
     let use_sentencepiece: bool = tokenizer.as_ref().is_some();
 
+    let start = Instant::now();
     // Initialize regex
     globals::init_regex();
     if let Some(tokenizer) = tokenizer {
@@ -210,8 +203,12 @@ fn main() -> std::io::Result<()> {
     let out_folder_path = PathBuf::from(out_folder);
 
     // Spawn the async task for writing JSONL data
+    let total_bytes = Arc::new(AtomicU64::new(0));
+    let total_bytes_clone = total_bytes.clone();
     rt.spawn(async move {
-        if let Err(e) = utils::writer::write_jsonl_receiver(data_rx, out_folder_path).await {
+        if let Err(e) =
+            utils::writer::write_jsonl_receiver(data_rx, out_folder_path, total_bytes_clone).await
+        {
             eprintln!("Error writing JSONL: {}", e);
         }
     });
@@ -227,12 +224,20 @@ fn main() -> std::io::Result<()> {
         }
     });
 
-    // Use rayon's parallel iterator for folder processing
-    all_folders.into_par_iter().for_each(|folder| {
-        process_folder(&folder, &use_sentencepiece, &source, data_tx.clone());
-        let count = counter.fetch_add(1, Ordering::SeqCst) + 1;
-        pb_clone.set_position(count as u64);
-    });
+    if std::env::var("BENCHMARK").unwrap_or("0".to_string()) == *"1" {
+        for folder in all_folders {
+            process_folder(&folder, &use_sentencepiece, &source, data_tx.clone());
+            let count = counter.fetch_add(1, Ordering::SeqCst) + 1;
+            pb_clone.set_position(count as u64);
+        }
+    } else {
+        // Use rayon's parallel iterator for folder processing
+        all_folders.into_par_iter().for_each(|folder| {
+            process_folder(&folder, &use_sentencepiece, &source, data_tx.clone());
+            let count = counter.fetch_add(1, Ordering::SeqCst) + 1;
+            pb_clone.set_position(count as u64);
+        });
+    }
 
     drop(data_tx);
     // Wait for the receiver to finish
@@ -259,6 +264,10 @@ fn main() -> std::io::Result<()> {
     println!(
         "Total time taken for write_jsonl: {:.2}s",
         TOTAL_TIME_WRITE_JSONL.load(Ordering::SeqCst) / num_threads
+    );
+    println!(
+        "Throughout MB/s: {:.2}",
+        total_bytes.load(Ordering::SeqCst) as f64 / 1024.0 / 1024.0 / start.elapsed().as_secs_f64()
     );
 
     // Wait for a moment to ensure all async tasks complete

@@ -84,16 +84,6 @@ impl ThreadGraph {
         self.graph.add_edge(from_idx, to_id, ());
     }
 
-    // #[allow(dead_code)]
-    // fn check_duplicates(&self) -> bool {
-    //     let mut set: HashSet<&String> = HashSet::new();
-    //     self.graph
-    //         .node_indices()
-    //         .all(|node| set.insert(&self.graph[node]));
-    //     set.len() == self.graph.node_count()
-    // }
-
-    #[allow(dead_code)]
     pub fn show_roots(&self) -> Vec<NodeIndex> {
         let mut roots_idx: Vec<NodeIndex> = Vec::new();
         for node in self.graph.node_indices() {
@@ -106,6 +96,26 @@ impl ThreadGraph {
             }
         }
         roots_idx
+    }
+    fn single_dfs(&self, start: &NodeIndex) -> (String, Vec<String>) {
+        // skip if not root
+        let mut dfs = Dfs::new(&self.graph, *start);
+        let mut threads: Vec<usize> = Vec::with_capacity(50); // Pre-allocate with a reasonable size
+
+        while let Some(visited) = dfs.next(&self.graph) {
+            threads.push(visited.index());
+        }
+        let root_id = self.graph[*start].clone();
+        let vec_string: Vec<String> = threads
+            .iter()
+            .map(|thread| self.allthreads[*thread].pagetext.clone())
+            .collect();
+        let vec_string = {
+            let mut vs = vec_string;
+            vs.shrink_to_fit();
+            vs
+        };
+        (root_id, vec_string)
     }
     /// Traverse the graph and return a vector of threads
     ///
@@ -122,39 +132,19 @@ impl ThreadGraph {
     /// ```
     pub fn traverse(&mut self) -> Vec<(String, Vec<String>)> {
         let roots = self.show_roots();
-        // check for duplicates
-        // self.show_roots();
-        // let mut root_id: String = String::new();
-        // print number of nodes
-        //dbg!(self.graph.node_count());
 
         let mut final_threads: Vec<(String, Vec<String>)> = Vec::with_capacity(self.threads.len());
-        roots
-            .par_iter()
-            .with_min_len(100)
-            .map(|start| {
-                // skip if not root
-                let mut dfs = Dfs::new(&self.graph, *start);
-                let mut threads: Vec<usize> = Vec::with_capacity(50); // Pre-allocate with a reasonable size
-
-                while let Some(visited) = dfs.next(&self.graph) {
-                    threads.push(visited.index());
-                }
-                let root_id = self.graph[*start].clone();
-                let vec_string: Vec<String> = threads
-                    .iter()
-                    .map(|thread| {
-                        self.allthreads[*thread].pagetext.clone()
-                    })
-                    .collect();
-                let vec_string = {
-                    let mut vs = vec_string;
-                    vs.shrink_to_fit();
-                    vs
-                };
-                (root_id, vec_string)
-            })
-            .collect_into_vec(&mut final_threads);
+        if std::env::var("BENCHMARK").unwrap_or("0".to_string()) == *"1" {
+            roots.iter().for_each(|start| {
+                final_threads.push(self.single_dfs(start));
+            });
+        } else {
+            roots
+                .par_iter()
+                .with_min_len(100)
+                .map(|start| self.single_dfs(start))
+                .collect_into_vec(&mut final_threads);
+        }
         // explicit clear
         self.threads.clear();
         self.allthreads.clear();

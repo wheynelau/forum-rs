@@ -158,7 +158,7 @@ mod tests {
         let forum_name = "testforum".to_string();
 
         // Test with sentencepiece=false (word count)
-        let result = process(&thread_id, &content, &forum_name, false);
+        let result = process(&thread_id, &content, &forum_name, &false);
 
         assert_eq!(result.thread_id, thread_id);
         assert_eq!(result.source, forum_name);
