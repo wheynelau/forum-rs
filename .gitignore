@@ -25,3 +25,4 @@ data
 target
 *Dockerfile
 *.jsonl
+Cargo.lock
