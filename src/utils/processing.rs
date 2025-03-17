@@ -44,15 +44,15 @@ fn clean_text(text: &str) -> String {
 /// # Example
 ///
 /// ```
-/// let thread_id = "1234".to_string();
+/// let thread_id = "1234";
 /// let content = vec!["thread root".to_string(), "comment".to_string()];
-/// let forum_name = "reddit".to_string();
+/// let forum_name = "reddit";
 /// let use_sentencepiece = true;
 ///
 /// ```
 pub fn process(
-    thread_id: &str,
-    content: &[String],
+    thread_id: String,
+    content: Vec<String>,
     forum_name: &str,
     use_sentencepiece: &bool,
 ) -> utils::writer::ThreadPost {
@@ -78,7 +78,7 @@ pub fn process(
     utils::writer::ThreadPost {
         length,
         raw_content: cleaned_content,
-        thread_id: String::from(thread_id),
+        thread_id,
         source: String::from(forum_name),
     }
 }
@@ -158,7 +158,7 @@ mod tests {
         let forum_name = "testforum".to_string();
 
         // Test with sentencepiece=false (word count)
-        let result = process(&thread_id, &content, &forum_name, &false);
+        let result = process(thread_id.clone(), content.clone(), &forum_name, &false);
 
         assert_eq!(result.thread_id, thread_id);
         assert_eq!(result.source, forum_name);

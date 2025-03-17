@@ -1,4 +1,3 @@
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::utils;
@@ -58,32 +57,40 @@ impl Post {
 }
 
 pub fn sender_thread_posts(
-    threads: Vec<(String, Vec<String>)>,
     use_sentencepiece: &bool,
-    forum_name: String,
+    forum_name: &str,
+    thread_receiver: crossbeam_channel::Receiver<(String, Vec<String>)>,
     sender_rx: crossbeam_channel::Sender<String>,
 ) {
-    // if BENCHMARK=1, then we will use the single-threaded version
-    if std::env::var("BENCHMARK").unwrap_or("0".to_string()) == *"1" {
-        for (thread_id, content) in threads {
-            let threadpost =
-                utils::processing::process(&thread_id, &content, &forum_name, use_sentencepiece);
-            // This sends after the processing
-            if let Ok(json_str) = serde_json::to_string(&threadpost) {
-                let _ = sender_rx.send(json_str);
-            }
+    while let Ok((thread_id, content)) = thread_receiver.recv() {
+        let threadpost =
+            utils::processing::process(thread_id, content, forum_name, use_sentencepiece);
+        // This sends after the processing
+        if let Ok(json_str) = serde_json::to_string(&threadpost) {
+            let _ = sender_rx.send(json_str);
         }
-        return;
     }
-    threads
-        .into_par_iter()
-        .with_min_len(50)
-        .for_each(|(thread_id, content)| {
-            let threadpost =
-                utils::processing::process(&thread_id, &content, &forum_name, use_sentencepiece);
-            // This sends after the processing
-            if let Ok(json_str) = serde_json::to_string(&threadpost) {
-                let _ = sender_rx.send(json_str);
-            }
-        });
 }
+//     if std::env::var("BENCHMARK").unwrap_or("0".to_string()) == *"1" {
+//         for (thread_id, content) in threads {
+//             let threadpost =
+//                 utils::processing::process(&thread_id, &content, &forum_name, use_sentencepiece);
+//             // This sends after the processing
+//             if let Ok(json_str) = serde_json::to_string(&threadpost) {
+//                 let _ = sender_rx.send(json_str);
+//             }
+//         }
+//         return;
+//     }
+//     threads
+//         .into_par_iter()
+//         .with_min_len(50)
+//         .for_each(|(thread_id, content)| {
+//             let threadpost =
+//                 utils::processing::process(&thread_id, &content, &forum_name, use_sentencepiece);
+//             // This sends after the processing
+//             if let Ok(json_str) = serde_json::to_string(&threadpost) {
+//                 let _ = sender_rx.send(json_str);
+//             }
+//         });
+// }

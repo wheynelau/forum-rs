@@ -72,19 +72,19 @@ fn process_single_file(entry: PathBuf, post_tx: Sender<forum_thread::Post>) {
     let fp = File::open(entry).unwrap();
     let reader = BufReader::new(fp);
     reader
-    .lines()
-    .map_while(Result::ok)
-    .filter_map(|line| {
-        serde_json::from_str::<forum_thread::JsonStruct>(&line)
-            .ok()
-            .and_then(forum_thread::Post::from_json_struct)
-    })
-    .for_each(|post| {
-        post_tx.send(post).unwrap();
-    });
+        .lines()
+        .map_while(Result::ok)
+        .filter_map(|line| {
+            serde_json::from_str::<forum_thread::JsonStruct>(&line)
+                .ok()
+                .and_then(forum_thread::Post::from_json_struct)
+        })
+        .for_each(|post| {
+            post_tx.send(post).unwrap();
+        });
 }
 
-pub fn get_threads(path: &str) -> Vec<(String, Vec<String>)> {
+pub fn get_threads(path: &str) -> graph::ThreadGraph {
     let entries = utils::file::single_folder(path);
     let (post_tx, post_rx) = unbounded();
 
@@ -104,6 +104,5 @@ pub fn get_threads(path: &str) -> Vec<(String, Vec<String>)> {
     drop(post_tx);
 
     // Wait for the graph processing to complete
-    let mut threadgraph = graph_handle.join().unwrap();
-    threadgraph.traverse()
+    graph_handle.join().unwrap()
 }

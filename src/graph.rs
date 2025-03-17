@@ -1,9 +1,12 @@
 use crate::forum_thread::Post;
+use crossbeam_channel::Sender;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::Dfs;
 use petgraph::Graph;
 use rayon::prelude::*;
 use std::collections::HashMap;
+
+use crate::utils::processing;
 
 ///
 /// ThreadGraph is a struct that represents a graph of threads and comments
@@ -110,11 +113,6 @@ impl ThreadGraph {
             .iter()
             .map(|thread| self.allthreads[*thread].pagetext.clone())
             .collect();
-        let vec_string = {
-            let mut vs = vec_string;
-            vs.shrink_to_fit();
-            vs
-        };
         (root_id, vec_string)
     }
     /// Traverse the graph and return a vector of threads
@@ -130,26 +128,40 @@ impl ThreadGraph {
     /// threads[0].0 // root post id
     /// threads[0].1 // vector of pagetext
     /// ```
-    pub fn traverse(&mut self) -> Vec<(String, Vec<String>)> {
+    pub fn traverse(
+        &mut self,
+        json_sender: Sender<String>,
+        use_sentencepiece: &bool,
+        forum_name: &str,
+    ) {
         let roots = self.show_roots();
 
-        let mut final_threads: Vec<(String, Vec<String>)> = Vec::with_capacity(self.threads.len());
-        if std::env::var("BENCHMARK").unwrap_or("0".to_string()) == *"1" {
-            roots.iter().for_each(|start| {
-                final_threads.push(self.single_dfs(start));
-            });
-        } else {
-            roots
-                .par_iter()
-                .with_min_len(100)
-                .map(|start| self.single_dfs(start))
-                .collect_into_vec(&mut final_threads);
-        }
-        // explicit clear
+        roots
+            .par_iter()
+            .with_min_len(100)
+            .for_each(|start| {
+                let (root_id, content): (String, Vec<String>) = self.single_dfs(start);
+                let threadpost =
+                    processing::process(root_id, content, forum_name, use_sentencepiece);
+                if let Ok(json_str) = serde_json::to_string(&threadpost) {
+                    let _ = json_sender.send(json_str);
+                }
+        });
+        // Clear data structures
         self.threads.clear();
         self.allthreads.clear();
         self.node_map.clear();
-        final_threads
+    }
+    // Used mainly for testing
+    #[allow(dead_code)]
+    fn slow_traverse(&mut self) -> Vec<(String, Vec<String>)> {
+        let roots = self.show_roots();
+        let mut threads: Vec<(String, Vec<String>)> = Vec::with_capacity(roots.len());
+        for start in roots {
+            let (root_id, content) = self.single_dfs(&start);
+            threads.push((root_id, content));
+        }
+        threads
     }
 
     pub fn show_threads(&self) {
@@ -199,8 +211,6 @@ mod tests {
         (graph, posts)
     }
 
-    /// Test the basic functionality of the graph
-    ///
     #[test]
     fn test_functional_graph() {
         // TODO: There should be a more idiomatic way to do this
@@ -230,7 +240,7 @@ mod tests {
             assert_eq!(graph.graph.node_count(), 12);
             assert_eq!(graph.graph.edge_count(), 9);
 
-            let mut threads = graph.traverse();
+            let mut threads = graph.slow_traverse();
             threads.sort_by(|a, b| a.0.cmp(&b.0));
 
             assert_eq!(threads.len(), target.len());

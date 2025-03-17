@@ -2,6 +2,7 @@
 
 use clap::Parser;
 use crossbeam_channel::{unbounded, Sender};
+use graph::ThreadGraph;
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use std::fs::{self};
@@ -43,6 +44,9 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 */
 pub mod args;
 
+pub mod forum_thread;
+pub mod globals;
+pub mod graph;
 /**
 
 # Module for the experimental functions
@@ -50,14 +54,9 @@ pub mod args;
 This module contains functions that may not produce the best performance but are experimental
 */
 pub mod sender;
-pub mod forum_thread;
-pub mod globals;
-pub mod graph;
 pub mod utils;
 
 static TOTAL_TIME_GET_THREADS: AtomicU64 = AtomicU64::new(0);
-static TOTAL_TIME_CREATE_POSTS: AtomicU64 = AtomicU64::new(0);
-static TOTAL_TIME_WRITE_JSONL: AtomicU64 = AtomicU64::new(0);
 
 /// Process the folder
 ///
@@ -90,15 +89,17 @@ fn process_folder(folder: &Path, use_sentencepiece: &bool, source: &str, post_tx
     // dbg!(&folder);
     let folder = folder.to_str().unwrap();
 
-    let start = Instant::now();
-    let threads: Vec<(String, Vec<String>)> = sender::get_threads(folder);
-    let get_threads_time = start.elapsed().as_secs();
-    TOTAL_TIME_GET_THREADS.fetch_add(get_threads_time, Ordering::SeqCst);
+    // thread_tx
+    // let (thread_tx, thread_rx): (
+    //     Sender<Threads>,
+    //     Receiver<Threads>,
+    // ) = bounded(50000);
 
     let start = Instant::now();
-    forum_thread::sender_thread_posts(threads, use_sentencepiece, source.to_string(), post_tx);
-    let create_posts_time = start.elapsed().as_secs();
-    TOTAL_TIME_CREATE_POSTS.fetch_add(create_posts_time, Ordering::SeqCst);
+    let mut threadgraph: ThreadGraph = sender::get_threads(folder);
+    threadgraph.traverse(post_tx, use_sentencepiece, source);
+    let get_threads_time = start.elapsed().as_secs();
+    TOTAL_TIME_GET_THREADS.fetch_add(get_threads_time, Ordering::SeqCst);
 }
 ///
 /// Entry point of the program
@@ -240,8 +241,6 @@ fn main() -> std::io::Result<()> {
     }
 
     drop(data_tx);
-    // Wait for the receiver to finish
-    println!("Completed processing all folders");
 
     // Finish the progress bar
     pb_clone.finish_with_message("Processing complete");
@@ -256,14 +255,6 @@ fn main() -> std::io::Result<()> {
     println!(
         "Total time taken for get_threads: {:.2}s",
         TOTAL_TIME_GET_THREADS.load(Ordering::SeqCst) / num_threads
-    );
-    println!(
-        "Total time taken for create_posts: {:.2}s",
-        TOTAL_TIME_CREATE_POSTS.load(Ordering::SeqCst) / num_threads
-    );
-    println!(
-        "Total time taken for write_jsonl: {:.2}s",
-        TOTAL_TIME_WRITE_JSONL.load(Ordering::SeqCst) / num_threads
     );
     println!(
         "Throughout MB/s: {:.2}",
